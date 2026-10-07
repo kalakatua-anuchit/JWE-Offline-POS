@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ระบบออกตั๋วฉุกเฉิน (POS ขัดข้อง)</title>
+<style>
+  :root{
+    --ink:#1b2430; --muted:#5b6673; --bg:#e9ecef; --panel:#fff; --line:#cdd3da;
+    --off:#0b6b63; --peak:#a85a00; --danger:#b3261e; --warn:#8a5a00; --ok:#1d6f3a;
+    --accent:var(--off);
+  }
+  body.peak{ --accent:var(--peak); }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; }
+  body{ background:var(--bg); color:var(--ink); font:16px/1.4 "Sarabun","Noto Sans Thai","Tahoma",system-ui,sans-serif; }
+  button{ font:inherit; color:inherit; cursor:pointer; }
+  button:focus-visible,input:focus-visible{ outline:3px solid #1a73e8; outline-offset:2px; }
+
+  header{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between;
+          padding:10px 16px; background:var(--ink); color:#fff; }
+  header h1{ margin:0; font-size:18px; font-weight:700; }
+  .hdr-right{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .pill{ padding:4px 12px; border-radius:99px; font-size:14px; font-weight:600; background:#3a4553; }
+  .pill.on{ background:#1d6f3a; } .pill.off{ background:var(--danger); } .pill.q{ background:#8a5a00; }
+  .hbtn{ background:transparent; border:1px solid #8794a3; color:#fff; border-radius:8px; padding:5px 12px; font-size:14px; }
+
+  main{ display:grid; gap:14px; padding:14px; max-width:1180px; margin:0 auto; }
+  @media(min-width:900px){ main{ grid-template-columns:minmax(0,3fr) minmax(0,2fr); align-items:start; } }
+  section{ background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  h2{ margin:0 0 10px; font-size:16px; }
+
+  #msg{ grid-column:1/-1; display:none; padding:12px 14px; border-radius:10px; font-weight:600; }
+  #msg.err{ display:block; background:#fde7e5; color:var(--danger); border:1px solid #f3b9b4; }
+  #msg.ok{ display:block; background:#e1f3e7; color:var(--ok); border:1px solid #a9d8b9; }
+  #msg.warn{ display:block; background:#fff1d6; color:var(--warn); border:1px solid #ecce93; }
+
+  .seg{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .seg button{ padding:12px; border:2px solid var(--line); background:#fff; border-radius:10px; text-align:left; }
+  .seg button b{ display:block; font-size:18px; }
+  .seg button span{ font-size:14px; color:var(--muted); }
+  .seg button[aria-pressed="true"]{ color:#fff; border-color:transparent; }
+  .seg button[aria-pressed="true"] span{ color:#fff; opacity:.9; }
+  .seg #pOFFPEAK[aria-pressed="true"]{ background:var(--off); }
+  .seg #pPEAK[aria-pressed="true"]{ background:var(--peak); }
+
+  #slots{ display:grid; grid-template-columns:repeat(auto-fill,minmax(104px,1fr)); gap:8px; }
+  .slot{ padding:10px 6px; border:2px solid var(--line); border-radius:10px; background:#fff; text-align:center; }
+  .slot b{ display:block; font-size:20px; }
+  .slot span{ font-size:13px; color:var(--muted); }
+  .slot.low span{ color:var(--warn); font-weight:700; }
+  .slot.full{ background:#f1d4d1; border-color:#e3a7a1; cursor:not-allowed; }
+  .slot.full span{ color:var(--danger); font-weight:700; }
+  .slot[aria-pressed="true"]{ background:var(--accent); border-color:var(--accent); color:#fff; }
+  .slot[aria-pressed="true"] span{ color:#fff; }
+
+  .qrow{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 0; border-top:1px solid var(--line); }
+  .qrow:first-of-type{ border-top:0; }
+  .qrow .lbl b{ font-size:18px; } .qrow .lbl div{ font-size:14px; color:var(--muted); }
+  .step{ display:flex; align-items:center; gap:6px; }
+  .step button{ width:52px; height:52px; font-size:26px; border-radius:10px; border:2px solid var(--line); background:#fff; }
+  .step button:disabled{ opacity:.35; cursor:not-allowed; }
+  .step output{ min-width:48px; text-align:center; font-size:26px; font-weight:700; }
+
+  .trace{ margin-top:10px; }
+  .trace label{ display:block; font-weight:600; margin-bottom:4px; }
+  .trace input{ width:100%; padding:12px; font-size:22px; letter-spacing:2px; border:2px solid var(--line); border-radius:10px; }
+
+  .total{ display:flex; justify-content:space-between; align-items:baseline; margin-top:14px; padding:12px 14px; background:var(--bg); border-radius:10px; }
+  .total span{ font-size:16px; } .total b{ font-size:34px; }
+  #confirm{ width:100%; margin-top:12px; padding:16px; font-size:20px; font-weight:700; color:#fff; background:var(--accent); border:0; border-radius:10px; }
+  #confirm:disabled{ opacity:.5; cursor:not-allowed; }
+
+  .hist-top{ display:flex; justify-content:space-between; align-items:baseline; gap:8px; flex-wrap:wrap; }
+  .hist-sum{ font-size:14px; color:var(--muted); }
+  .tx{ border-top:1px solid var(--line); padding:10px 0; }
+  .tx .l1{ display:flex; justify-content:space-between; gap:8px; font-weight:600; }
+  .tx .l2{ font-size:14px; color:var(--muted); }
+  .tx.void .l1{ text-decoration:line-through; color:var(--muted); }
+  .badge{ display:inline-block; font-size:12px; padding:1px 8px; border-radius:99px; margin-left:6px; background:#fff1d6; color:var(--warn); font-weight:600; text-decoration:none; }
+  .badge.v{ background:#fde7e5; color:var(--danger); }
+  .acts{ margin-top:6px; display:flex; gap:8px; }
+  .acts button{ padding:6px 12px; border:1px solid var(--line); border-radius:8px; background:#fff; font-size:14px; }
+  .acts .vd{ color:var(--danger); border-color:#e3a7a1; }
+  .empty{ color:var(--muted); font-size:14px; padding:6px 0; }
+
+  #receipt{ display:none; }
+  @media print{
+    @page{ size:80mm auto; margin:0; }
+    body{ background:#fff; }
+    body>*:not(#receipt){ display:none!important; }
+    #receipt{ display:block; width:72mm; margin:0 auto; color:#000; }
+    .rc{ padding:3mm 2mm; font:12px/1.4 "Sarabun","Tahoma",sans-serif; page-break-after:always; }
+    .rc .c{ text-align:center; } .rc .big{ font-size:22px; font-weight:700; }
+    .rc hr{ border:0; border-top:1px dashed #000; margin:5px 0; }
+    .rc .r{ display:flex; justify-content:space-between; }
+    .rc .copy{ border:1px solid #000; display:inline-block; padding:0 6px; margin-top:2px; font-weight:700; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ตั๋วฉุกเฉิน · POS ขัดข้อง</h1>
+  <div class="hdr-right">
+    <span id="net" class="pill">กำลังเชื่อมต่อ…</span>
+    <span id="pend" class="pill q" hidden></span>
+    <button id="sync" class="hbtn" type="button">ซิงก์ตอนนี้</button>
+    <button id="ctr" class="hbtn" type="button"></button>
+  </div>
+</header>
+
+<main>
+  <div id="msg" role="status" aria-live="polite"></div>
+
+  <div>
+    <section>
+      <h2>1. ช่วงเวลา</h2>
+      <div class="seg">
+        <button id="pOFFPEAK" type="button" data-p="OFFPEAK"><b>Off-Peak</b><span>11:00 - 15:30</span></button>
+        <button id="pPEAK" type="button" data-p="PEAK"><b>Peak</b><span>16:00 - 21:30</span></button>
+      </div>
+    </section>
+
+    <section style="margin-top:14px">
+      <h2>2. รอบเวลา (ที่นั่งคงเหลือ)</h2>
+      <div id="slots"></div>
+    </section>
+
+    <section style="margin-top:14px">
+      <h2>3. จำนวนตั๋วและชำระเงิน</h2>
+      <div class="qrow">
+        <div class="lbl"><b>ผู้ใหญ่</b><div id="pa"></div></div>
+        <div class="step"><button type="button" data-k="adult" data-d="-1" aria-label="ลดผู้ใหญ่">−</button><output id="qa">0</output><button type="button" data-k="adult" data-d="1" aria-label="เพิ่มผู้ใหญ่">+</button></div>
+      </div>
+      <div class="qrow">
+        <div class="lbl"><b>เด็ก</b><div id="pc"></div></div>
+        <div class="step"><button type="button" data-k="child" data-d="-1" aria-label="ลดเด็ก">−</button><output id="qc">0</output><button type="button" data-k="child" data-d="1" aria-label="เพิ่มเด็ก">+</button></div>
+      </div>
+      <div class="total"><span>ยอดที่ต้องชำระ</span><b id="total">0 บาท</b></div>
+      <div class="trace">
+        <label for="trace">Trace No. จากสลิปเครื่อง EDC (กรอกหลังรูดบัตรสำเร็จ)</label>
+        <input id="trace" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="เช่น 000123">
+      </div>
+      <button id="confirm" type="button">ยืนยันและพิมพ์ตั๋ว</button>
+    </section>
+  </div>
+
+  <section>
+    <div class="hist-top"><h2>รายการวันนี้ (เครื่องนี้)</h2><div class="hist-sum" id="hsum"></div></div>
+    <div id="hist"></div>
+  </section>
+</main>
+
+<div id="receipt" aria-hidden="true"></div>
+
+<script>
+/* ================= CONFIG: แก้ 3 บรรทัดแรกก่อนใช้งาน ================= */
+const CONFIG = {
+  API_URL: 'https://script.google.com/macros/s/AKfycbyPAO2haiYcIbQAwOjU0PIU6ysiRpjl0avyFQVuCiSxS8xuEwHFoG8aU3pjhcVgKJV12g/exec',            // Web app URL จาก Apps Script (ลงท้าย /exec)
+  TOKEN:   '12345678',            // ต้องตรงกับ SECRET ใน Code.gs
+  VOID_PIN: 'Awc2026',           // รหัสหัวหน้างานสำหรับยกเลิกรายการ ('' = ไม่ถาม)
+  BUSINESS_NAME: 'Jurassic World : The Experience Bangkok',
+  CAPACITY: 50,           // ใช้เมื่อยังไม่เคยดึงค่าจากเซิร์ฟเวอร์
+  TIMEOUT_MS: 8000,
+  AUTO_SYNC_MS: 15000
+};
+const PRICES = {
+  OFFPEAK: { adult: 769, child: 579, label: 'Off-Peak', start: 11*60, end: 15*60+30 },
+  PEAK:    { adult: 989, child: 789, label: 'Peak',     start: 16*60, end: 21*60+30 }
+};
+
+/* ================= helpers & local storage ================= */
+const $ = id => document.getElementById(id);
+const pad = n => String(n).padStart(2, '0');
+const ymd = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const stamp = (d = new Date()) => `${ymd(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+const baht = n => Number(n).toLocaleString('th-TH');
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const store = {
+  get(k, def){ try { const v = localStorage.getItem('ets_' + k); return v ? JSON.parse(v) : def; } catch(e){ return def; } },
+  set(k, v){ try { localStorage.setItem('ets_' + k, JSON.stringify(v)); } catch(e){} }
+};
+
+/* ================= state ================= */
+let counter = store.get('counter', '');
+let queue   = store.get('queue', []);                                   // unsent sell/void operations
+let history = store.get('history', []).filter(h => h.date === ymd());   // today's sales on this device
+const cached = store.get('sold', { date: '', sold: {}, cap: CONFIG.CAPACITY });
+let sold = cached.date === ymd() ? cached.sold : {};
+let cap  = cached.cap || CONFIG.CAPACITY;
+let online = null, busy = false, syncing = false, lastSync = null;
+let period = 'OFFPEAK', slot = '', adult = 0, child = 0;
+const saveQueue = () => store.set('queue', queue);
+const saveHistory = () => store.set('history', history.slice(-60));
+
+function slotsOf(p){
+  const out = [];
+  for (let m = PRICES[p].start; m <= PRICES[p].end; m += 30) out.push(`${pad(Math.floor(m/60))}:${pad(m%60)}`);
+  return out;
+}
+function pickDefaults(){
+  const d = new Date(), m = d.getHours()*60 + d.getMinutes();
+  period = m >= PRICES.PEAK.start ? 'PEAK' : 'OFFPEAK';
+  const list = slotsOf(period);
+  slot = list.filter(s => { const [h, mm] = s.split(':'); return +h*60 + +mm <= m; }).pop() || list[0];
+}
+const pendingQty = s => queue.filter(o => o.type === 'sell' && o.tx.date === ymd() && o.tx.session === s)
+                             .reduce((a, o) => a + o.tx.adult + o.tx.child, 0);
+const remaining = s => Math.max(0, cap - (sold[s] || 0) - pendingQty(s));
+
+/* ================= network ================= */
+async function call(url, opts){
+  if (!CONFIG.API_URL) throw new Error('NO_API');
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), CONFIG.TIMEOUT_MS);
+  try { const r = await fetch(url, { ...opts, signal: ctl.signal }); const j = await r.json(); online = true; return j; }
+  catch(e){ online = false; throw e; }
+  finally { clearTimeout(t); }
+}
+const post = body => call(CONFIG.API_URL, {
+  method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+  body: JSON.stringify({ ...body, token: CONFIG.TOKEN })
+});
+
+async function refreshSold(){
+  try {
+    const j = await call(`${CONFIG.API_URL}?action=getSold&date=${ymd()}&token=${encodeURIComponent(CONFIG.TOKEN)}`, {});
+    if (j.ok){ sold = j.sold || {}; cap = j.capacity || cap; lastSync = new Date(); store.set('sold', { date: ymd(), sold, cap }); }
+    else if (j.error === 'AUTH') say('err', 'TOKEN ไม่ตรงกับ Code.gs กรุณาตรวจสอบ CONFIG.TOKEN');
+  } catch(e){}
+  render();
+}
+
+async function syncQueue(){
+  if (syncing || !queue.length) return;
+  syncing = true;
+  try {
+    while (queue.length){
+      const op = queue[0]; let j;
+      try {
+        j = op.type === 'sell'
+          ? await post({ action: 'sell', ...op.tx, force: true, offline: true })
+          : await post({ action: 'void', txnId: op.txnId });
+      } catch(e){ break; }
+      if (j.ok || (op.type === 'void' && j.error === 'NOT_FOUND')){
+        queue.shift(); saveQueue();
+        if (op.type === 'sell'){ const h = history.find(x => x.txnId === op.tx.txnId); if (h){ h.queued = false; saveHistory(); } }
+      } else break;
+    }
+  } finally { syncing = false; }
+}
+async function syncAll(){ await syncQueue(); await refreshSold(); }
+
+/* ================= UI messages ================= */
+let msgTimer;
+function say(type, text){
+  const el = $('msg'); el.className = type; el.textContent = text;
+  clearTimeout(msgTimer);
+  if (type === 'ok') msgTimer = setTimeout(() => { el.className = ''; el.textContent = ''; }, 6000);
+  if (type) window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+/* ================= render ================= */
+function render(){
+  document.body.classList.toggle('peak', period === 'PEAK');
+  ['OFFPEAK', 'PEAK'].forEach(p => $('p' + p).setAttribute('aria-pressed', String(p === period)));
+
+  const net = $('net');
+  net.className = 'pill ' + (online === true ? 'on' : online === false ? 'off' : '');
+  net.textContent = online === true ? 'ออนไลน์' : online === false ? 'ออฟไลน์ · บันทึกในเครื่อง' : 'กำลังเชื่อมต่อ…';
+  const pend = $('pend'); pend.hidden = !queue.length; pend.textContent = `รอซิงก์ ${queue.length} รายการ`;
+  $('ctr').textContent = 'เคาน์เตอร์: ' + (counter || 'ตั้งชื่อ');
+
+  $('slots').innerHTML = slotsOf(period).map(s => {
+    const r = remaining(s), cls = r === 0 ? 'full' : r <= 10 ? 'low' : '';
+    return `<button type="button" class="slot ${cls}" data-s="${s}" aria-pressed="${s === slot}" ${r === 0 ? 'aria-disabled="true"' : ''}><b>${s}</b><span>${r === 0 ? 'เต็ม' : 'เหลือ ' + r}</span></button>`;
+  }).join('');
+
+  const pr = PRICES[period], rem = slot ? remaining(slot) : 0;
+  $('pa').textContent = `${baht(pr.adult)} บาท / ใบ`;
+  $('pc').textContent = `${baht(pr.child)} บาท / ใบ`;
+  $('qa').textContent = adult; $('qc').textContent = child;
+  const full = adult + child >= rem;
+  document.querySelectorAll('.step button').forEach(b => {
+    const d = +b.dataset.d, k = b.dataset.k, v = k === 'adult' ? adult : child;
+    b.disabled = d < 0 ? v <= 0 : full;
+  });
+  $('total').textContent = baht(adult * pr.adult + child * pr.child) + ' บาท';
+  $('confirm').disabled = busy;
+
+  const live = history.filter(h => !h.voided);
+  $('hsum').textContent = `${live.length} รายการ · ${live.reduce((a, h) => a + h.adult + h.child, 0)} ใบ · ${baht(live.reduce((a, h) => a + h.total, 0))} บาท`;
+  $('hist').innerHTML = history.length ? history.slice().reverse().map(h => {
+    const vq = queue.some(o => o.type === 'void' && o.txnId === h.txnId);
+    return `<div class="tx ${h.voided ? 'void' : ''}">
+      <div class="l1"><span>${esc(h.ts.slice(11, 16))} · รอบ ${esc(h.session)}${h.queued ? '<span class="badge">รอซิงก์</span>' : ''}${h.voided ? `<span class="badge v">ยกเลิก${vq ? ' (รอซิงก์)' : ''}</span>` : ''}</span><span>${baht(h.total)} บาท</span></div>
+      <div class="l2">ผู้ใหญ่ ${h.adult} · เด็ก ${h.child} · Trace ${esc(h.trace)} · ${PRICES[h.period].label}</div>
+      <div class="acts"><button type="button" data-act="print" data-id="${esc(h.txnId)}">พิมพ์ซ้ำ</button>${h.voided ? '' : `<button type="button" class="vd" data-act="void" data-id="${esc(h.txnId)}">ยกเลิกรายการ</button>`}</div>
+    </div>`;
+  }).join('') : '<div class="empty">ยังไม่มีรายการขายจากเครื่องนี้</div>';
+}
+
+/* ================= receipt ================= */
+function receiptHtml(tx, copy, reprint){
+  const pr = PRICES[tx.period];
+  const lines = [];
+  if (tx.adult) lines.push(`<div class="r"><span>Adult ${tx.adult} x ${baht(pr.adult)}</span><span>${baht(tx.adult * pr.adult)}</span></div>`);
+  if (tx.child) lines.push(`<div class="r"><span>child ${tx.child} x ${baht(pr.child)}</span><span>${baht(tx.child * pr.child)}</span></div>`);
+  return `<div class="rc">
+    <div class="c"><b>${esc(CONFIG.BUSINESS_NAME)}</b><br>Temporary Receipt<br><span class="copy">${esc(copy)}${reprint ? ' · Reprint' : ''}</span></div>
+    <hr>
+    <div class="c">Date ${esc(tx.date)}<br>${pr.label}</div>
+    <div class="c big">Show Time ${esc(tx.session)}</div>
+    <hr>
+    ${lines.join('')}
+    <div class="r"><b>Total</b><b>${baht(tx.total)} Baht</b></div>
+    <hr>
+    <div class="r"><span>EDC Trace No.</span><span>${esc(tx.trace)}</span></div>
+    <div class="r"><span>Order No.</span><span>${esc(tx.txnId)}</span></div>
+    <div class="r"><span>Ticket Time</span><span>${esc(tx.ts.slice(11))}</span></div>
+    <div class="r"><span>Staff</span><span>${esc(tx.counter)}</span></div>
+    <hr>
+    <div class="c">Ticket can use on the date and show time of purchase<br>Please show the ticket at the entrance</div>
+  </div>`;
+}
+function printTx(tx, reprint){
+  $('receipt').innerHTML = receiptHtml(tx, 'For Customer', reprint) + receiptHtml(tx, 'สำหรับตรวจที่ประตู', reprint);
+  setTimeout(() => window.print(), 80);
+}
+
+/* ================= actions ================= */
+async function checkout(){
+  if (busy) return;
+  const pr = PRICES[period], trace = $('trace').value.trim();
+  if (!counter){ say('err', 'กรุณาตั้งชื่อเคาน์เตอร์ก่อน (ปุ่มมุมขวาบน)'); return; }
+  if (!slot) return say('err', 'กรุณาเลือกรอบเวลา');
+  if (adult + child < 1) return say('err', 'กรุณาเลือกจำนวนตั๋วอย่างน้อย 1 ใบ');
+  if (adult + child > remaining(slot)) return say('err', `รอบ ${slot} เหลือ ${remaining(slot)} ที่นั่ง`);
+  if (!/^\d{1,12}$/.test(trace)) return say('err', 'กรุณากรอก Trace No. เป็นตัวเลขจากสลิป EDC');
+
+  busy = true; render();
+  const tx = {
+    txnId: counter + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5).toUpperCase(),
+    date: ymd(), ts: stamp(), period, session: slot, adult, child,
+    total: adult * pr.adult + child * pr.child, trace, counter
+  };
+  let queued = false;
+  try {
+    const j = await post({ action: 'sell', ...tx });
+    if (j.ok){ sold[slot] = (sold[slot] || 0) + adult + child; }
+    else if (j.error === 'FULL'){ busy = false; await refreshSold(); return say('err', `รอบ ${slot} เหลือ ${j.remaining} ที่นั่ง (เคาน์เตอร์อื่นขายไปแล้ว)`); }
+    else if (j.error === 'DUP_TRACE'){ busy = false; render(); return say('err', 'Trace No. นี้ถูกใช้แล้ววันนี้ กรุณาตรวจสลิป EDC'); }
+    else if (j.error === 'AUTH'){ busy = false; render(); return say('err', 'TOKEN ไม่ตรงกับ Code.gs กรุณาตรวจสอบ CONFIG.TOKEN'); }
+    else queued = true;                      // other server hiccup: keep selling, retry later
+  } catch(e){ queued = true; }
+
+  if (queued){ queue.push({ type: 'sell', tx }); saveQueue(); }
+  history.push({ ...tx, queued, voided: false }); saveHistory();
+  adult = 0; child = 0; $('trace').value = ''; busy = false;
+  say(queued ? 'warn' : 'ok', queued ? 'ออฟไลน์: บันทึกในเครื่องแล้ว และจะซิงก์อัตโนมัติเมื่อเน็ตกลับมา' : 'บันทึกรายการแล้ว');
+  render(); printTx(tx, false);
+}
+
+async function voidTx(id){
+  const h = history.find(x => x.txnId === id);
+  if (!h || h.voided) return;
+  if (CONFIG.VOID_PIN && prompt('รหัสหัวหน้างาน') !== CONFIG.VOID_PIN) return say('err', 'รหัสไม่ถูกต้อง');
+  if (!confirm(`ยกเลิกรายการ รอบ ${h.session} · ${baht(h.total)} บาท · Trace ${h.trace}?\nอย่าลืมยกเลิกรายการบนเครื่อง EDC ด้วย`)) return;
+
+  h.voided = true;
+  const qi = queue.findIndex(o => o.type === 'sell' && o.tx.txnId === id);
+  if (qi >= 0){ queue.splice(qi, 1); h.queued = false; }          // never reached the server: just drop it
+  else {
+    sold[h.session] = Math.max(0, (sold[h.session] || 0) - h.adult - h.child);
+    try { const j = await post({ action: 'void', txnId: id }); if (!j.ok && j.error !== 'NOT_FOUND') throw new Error(j.error); }
+    catch(e){ queue.push({ type: 'void', txnId: id }); }
+  }
+  saveQueue(); saveHistory(); render();
+  say('ok', 'ยกเลิกรายการแล้ว คืนที่นั่งให้รอบ ' + h.session);
+}
+
+/* ================= events ================= */
+document.addEventListener('click', e => {
+  const t = e.target.closest('button'); if (!t) return;
+  if (t.dataset.p){ period = t.dataset.p; slot = ''; adult = child = 0; render(); }
+  else if (t.classList.contains('slot')){
+    if (remaining(t.dataset.s) === 0) return say('err', `รอบ ${t.dataset.s} เต็มแล้ว`);
+    slot = t.dataset.s; adult = child = 0; render();
+  }
+  else if (t.dataset.k){
+    if (!slot) return say('err', 'กรุณาเลือกรอบเวลาก่อน');
+    const d = +t.dataset.d;
+    if (t.dataset.k === 'adult') adult = Math.max(0, adult + d); else child = Math.max(0, child + d);
+    render();
+  }
+  else if (t.dataset.act === 'void') voidTx(t.dataset.id);
+  else if (t.dataset.act === 'print'){ const h = history.find(x => x.txnId === t.dataset.id); if (h) printTx(h, true); }
+});
+$('confirm').addEventListener('click', checkout);
+$('trace').addEventListener('keydown', e => { if (e.key === 'Enter') checkout(); });
+$('sync').addEventListener('click', async () => { await syncAll(); say(online ? 'ok' : 'warn', online ? 'ซิงก์เรียบร้อย' : 'ยังเชื่อมต่อไม่ได้ ข้อมูลยังเก็บอยู่ในเครื่อง'); });
+$('ctr').addEventListener('click', () => {
+  const v = (prompt('ชื่อเคาน์เตอร์ (ตัวอักษรหรือตัวเลข เช่น C1)', counter) || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 8).toUpperCase();
+  if (v){ counter = v; store.set('counter', v); render(); }
+});
+window.addEventListener('online', syncAll);
+window.addEventListener('beforeunload', e => { if (queue.length){ e.preventDefault(); e.returnValue = ''; } });
+
+/* ================= start ================= */
+pickDefaults();
+render();
+if (!CONFIG.API_URL) say('warn', 'ยังไม่ได้ตั้งค่า CONFIG.API_URL — ระบบจะทำงานแบบออฟไลน์และเก็บข้อมูลในเครื่องเท่านั้น');
+if (!counter) $('ctr').click();
+syncAll();
+setInterval(syncAll, CONFIG.AUTO_SYNC_MS);
+</script>
+</body>
+</html>
